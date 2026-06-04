@@ -13,6 +13,9 @@ import logging
 
 from datasets import DatasetDict, load_dataset
 
+from .dataset import prepare_train_features, prepare_eval_features
+
+
 logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -32,15 +35,12 @@ def load_raw_datasets(config) -> DatasetDict:
         DatasetDict với splits "train", "validation", "test" (tùy khả dụng)
     """
 
-    project_root = DATA_DIR.parent
-
     def _resolve(path: str | None) -> str | None:
         if path is None:
             return None
         p = Path(path)
         if not p.is_absolute():
-            repo_relative = project_root / p
-            p = repo_relative if repo_relative.exists() else DATA_DIR / p
+            p = DATA_DIR / p
         if not p.exists():
             raise FileNotFoundError(f"Dataset file not found: {p}")
         return str(p)
@@ -88,8 +88,6 @@ def build_qa_datasets(tokenizer, config, is_training: bool = True) -> DatasetDic
         - start_positions & end_positions (nếu is_training=True)
     """
 
-    from .dataset import prepare_train_features, prepare_eval_features
-
     raw_datasets = load_raw_datasets(config=config)
 
     processed = DatasetDict()
@@ -111,7 +109,7 @@ def build_qa_datasets(tokenizer, config, is_training: bool = True) -> DatasetDic
             prepare_fn = prepare_eval_features
             prepare_kwargs = {}
 
-        # Tokenize (auto-detects Vietnamese via language column)
+        # Tokenize
         processed_dataset = dataset.map(
             lambda examples: prepare_fn(
                 examples=examples,
@@ -121,6 +119,8 @@ def build_qa_datasets(tokenizer, config, is_training: bool = True) -> DatasetDic
                 max_length=config.max_length,
                 doc_stride=config.doc_stride,
                 padding=config.padding,
+                use_vietnamese_segmentation=config.use_vietnamese_segmentation,
+                segmentation_tool=config.segmentation_tool,
                 **prepare_kwargs,
             ),
             batched=True,
@@ -191,6 +191,8 @@ def load_dataset_for_inference(
         max_length=config.max_length,
         doc_stride=config.doc_stride,
         padding=config.padding,
+        use_vietnamese_segmentation=config.use_vietnamese_segmentation,
+        segmentation_tool=config.segmentation_tool,
     )
 
     # Convert to tensors
