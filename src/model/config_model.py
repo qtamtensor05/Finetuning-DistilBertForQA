@@ -37,9 +37,6 @@ class TrainingConfig:
     padding: str
     cache_dir: Optional[str]
 
-    use_vietnamese_segmentation: bool
-    segmentation_tool: str
-
     batch_size: int
     epochs: int
     learning_rate: float
