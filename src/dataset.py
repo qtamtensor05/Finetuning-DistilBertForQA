@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from transformers import PreTrainedTokenizerBase
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 try:
     from .vietnamese import has_vietnamese, segment_texts
@@ -10,6 +10,17 @@ except ImportError:
     from vietnamese import has_vietnamese, segment_texts
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_pad_token(tokenizer: PreTrainedTokenizerBase, padding: str) -> None:
+    if padding == "do_not_pad":
+        return
+    if tokenizer.pad_token is not None:
+        return
+    if tokenizer.eos_token is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+        return
+    tokenizer.add_special_tokens({"pad_token": "[PAD]"})
 
 
 def prepare_train_features(
@@ -32,6 +43,8 @@ def prepare_train_features(
         logger.info("Detected Vietnamese data, applying word segmentation")
         questions = segment_texts(questions)
         contexts = segment_texts(contexts)
+
+    _ensure_pad_token(tokenizer, padding)
 
     tokenized = tokenizer(
         questions,
@@ -113,6 +126,8 @@ def prepare_eval_features(
         logger.info("Detected Vietnamese data, applying word segmentation")
         questions = segment_texts(questions)
         contexts = segment_texts(contexts)
+
+    _ensure_pad_token(tokenizer, padding)
 
     tokenized = tokenizer(
         questions,
