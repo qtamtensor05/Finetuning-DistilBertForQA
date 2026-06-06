@@ -35,12 +35,15 @@ def load_raw_datasets(config) -> DatasetDict:
         DatasetDict với splits "train", "validation", "test" (tùy khả dụng)
     """
 
+    project_root = DATA_DIR.parent
+
     def _resolve(path: str | None) -> str | None:
         if path is None:
             return None
         p = Path(path)
         if not p.is_absolute():
-            p = DATA_DIR / p
+            repo_relative = project_root / p
+            p = repo_relative if repo_relative.exists() else DATA_DIR / p
         if not p.exists():
             raise FileNotFoundError(f"Dataset file not found: {p}")
         return str(p)
@@ -87,6 +90,8 @@ def build_qa_datasets(tokenizer, config, is_training: bool = True) -> DatasetDic
         - attention_mask: Attention mask
         - start_positions & end_positions (nếu is_training=True)
     """
+
+    from .dataset import prepare_train_features, prepare_eval_features
 
     raw_datasets = load_raw_datasets(config=config)
 
