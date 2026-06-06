@@ -18,7 +18,8 @@ from .dataset import filter_qa_dataset, prepare_train_features, prepare_eval_fea
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
 
 
 def load_raw_datasets(config) -> DatasetDict:
@@ -38,12 +39,15 @@ def load_raw_datasets(config) -> DatasetDict:
     def _resolve(path: str | None) -> str | None:
         if path is None:
             return None
-        p = Path(path)
-        if not p.is_absolute():
-            p = DATA_DIR / p
-        if not p.exists():
-            raise FileNotFoundError(f"Dataset file not found: {p}")
-        return str(p)
+        p = Path(path).expanduser()
+        candidates = [p] if p.is_absolute() else [PROJECT_ROOT / p, DATA_DIR / p]
+
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+
+        checked = ", ".join(str(candidate) for candidate in candidates)
+        raise FileNotFoundError(f"Dataset file not found: {path}. Checked: {checked}")
 
     data_files: dict[str, str] = {}
 

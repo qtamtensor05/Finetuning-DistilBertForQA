@@ -20,6 +20,8 @@ defaults:
   doc_stride: 128
   padding: max_length
   cache_dir: null
+  use_vietnamese_segmentation: true
+  segmentation_tool: underthesea
 
   batch_size: 16
   epochs: 2

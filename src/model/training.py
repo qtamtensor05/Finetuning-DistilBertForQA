@@ -11,6 +11,7 @@ from loadmodel import CustomLoraDistilBertQA
 from config_model import Config
 from src.data_loader import build_qa_datasets
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 
 
@@ -45,11 +46,16 @@ loss_fn = nn.CrossEntropyLoss()
 model.train()
 
 for epoch in range(config.epochs):
-    for batch in train_loader:
+    total_loss = 0.0
+    progress = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{config.epochs}")
+
+    for batch in progress:
         input_ids = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
         start_positions = batch["start_positions"].to(device)
         end_positions = batch["end_positions"].to(device)
+
+        optimizer.zero_grad()
 
         start_logits, end_logits = model(input_ids, attention_mask)
 
@@ -57,6 +63,10 @@ for epoch in range(config.epochs):
         end_loss = loss_fn(end_logits, end_positions)
         loss = (start_loss + end_loss) / 2
 
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item()
+        progress.set_postfix(loss=f"{loss.item():.4f}")
+
+    print(f"Epoch {epoch + 1} average loss: {total_loss / len(train_loader):.4f}")
