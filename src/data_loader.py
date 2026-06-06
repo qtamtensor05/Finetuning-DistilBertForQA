@@ -50,14 +50,17 @@ def load_raw_datasets(config) -> DatasetDict:
     train = _resolve(config.train_file)
     if train:
         data_files["train"] = train
+        print(f"Load train data from: {train}")
 
     validation = _resolve(config.validation_file)
     if validation:
         data_files["validation"] = validation
+        print(f"Load validation data from: {validation}")
 
     test = _resolve(config.test_file)
     if test:
         data_files["test"] = test
+        print(f"Load test data from: {test}")
 
     if not data_files:
         raise ValueError(
