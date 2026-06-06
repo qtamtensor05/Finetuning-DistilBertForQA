@@ -31,7 +31,6 @@ def normalize_text(text: str) -> str:
 
 def is_quality_sample(
     context: str,
-    question: str,
     answer: dict | None,
     min_answer_len: int = _MIN_ANSWER_LENGTH,
     max_answer_len: int = _MAX_ANSWER_LENGTH,
