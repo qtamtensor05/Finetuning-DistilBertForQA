@@ -12,7 +12,37 @@ from config_model import Config
 from src.data_loader import build_qa_datasets
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
+from evalmodel import evaluate_loss
 
+
+def save_checkpoint(
+    checkpoint_dir,
+    model,
+    optimizer,
+    tokenizer,
+    config,
+    epoch,
+    train_loss,
+    val_loss,
+    best_val_loss,
+):
+    checkpoint_dir = Path(checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    torch.save(
+        {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "best_val_loss": best_val_loss,
+            "config": config.__dict__,
+        },
+        checkpoint_dir / "training_state.pt",
+    )
+    tokenizer.save_pretrained(checkpoint_dir)
+    config.to_yaml(checkpoint_dir / "config.yaml")
 
 
 #Lựa chọn dữ liệu train
@@ -22,6 +52,19 @@ tokenizer = AutoTokenizer.from_pretrained(config.model_name)
 datasets = build_qa_datasets(tokenizer, config)
 #Gọi data train
 train_data = datasets["train"]
+val_data = datasets["validation"]
+
+val_loader = DataLoader(
+    val_data,
+    batch_size=config.batch_size,
+    shuffle=False,
+)
+
+train_loader = DataLoader(
+    train_data,
+    batch_size=config.batch_size,
+    shuffle=True,
+)
 
 print(train_data)
 print(train_data[0].keys())
@@ -31,11 +74,7 @@ print("start_positions:", train_data[0]["start_positions"])
 print("end_positions:", train_data[0]["end_positions"])
 
 
-train_loader = DataLoader(
-    train_data,
-    batch_size=config.batch_size,
-    shuffle=True,
-)
+
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -44,6 +83,8 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
 loss_fn = nn.CrossEntropyLoss()
 
 model.train()
+output_dir = Path(config.output_dir)
+best_val_loss = float("inf")
 
 for epoch in range(config.epochs):
     total_loss = 0.0
@@ -69,4 +110,29 @@ for epoch in range(config.epochs):
         total_loss += loss.item()
         progress.set_postfix(loss=f"{loss.item():.4f}")
 
-    print(f"Epoch {epoch + 1} average loss: {total_loss / len(train_loader):.4f}")
+    train_loss = total_loss / len(train_loader)
+    val_loss = evaluate_loss(model, val_loader, loss_fn, device)
+    print(
+        f"Epoch {epoch + 1}: "
+        f"train_loss={train_loss:.4f}, "
+        f"val_loss={val_loss:.4f}"
+    )
+
+    epoch_number = epoch + 1
+    is_best = val_loss < best_val_loss
+    if is_best:
+        best_val_loss = val_loss
+
+    if getattr(config, "save_best_model", True) and is_best:
+        save_checkpoint(
+            output_dir / "best_model",
+            model,
+            optimizer,
+            tokenizer,
+            config,
+            epoch_number,
+            train_loss,
+            val_loss,
+            best_val_loss,
+        )
+        print(f"Saved best model: {output_dir / 'best_model'}")
