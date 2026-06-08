@@ -19,6 +19,8 @@ defaults:
   epochs: 2
   learning_rate: 3.0e-5
   weight_decay: 0.01
+  use_question_group_sampler: true
+  question_group_sampling_power: 0.5
   warmup_ratio: 0.1
   max_grad_norm: 1.0
   gradient_accumulation_steps: 1
@@ -55,55 +57,43 @@ defaults:
 
 default_profile: train_vi
 default_pipeline_profiles:
-  - train_mixed
-  - train_stage2_vi_from_mixed
-
+  - train_en
+  - train_vi_from_en
 profiles:
   train_vi:
-    train_file: data/stage2_vi_train.jsonl
-    validation_file: data/stage2_vi_validation.jsonl
-    epochs: 10
+    train_file: data/filtered_vi/data_vi_train_filtered.jsonl
+    validation_file: data/filtered_vi/data_vi_validation_filtered.jsonl
+    epochs: 5
     learning_rate: 1.0e-5
     output_dir: outputs/checkpoints_vi
     artifact_dir: artifacts/readers/vi
     artifact_name: vi
 
   train_en:
-    train_file: data/stage1_en_train.jsonl
-    validation_file: data/stage1_en_validation.jsonl
-    epochs: 1
+    train_file: data/filtered_en/data_en_train_filtered.jsonl
+    validation_file: data/filtered_en/data_en_validation_filtered.jsonl
+    epochs: 5
     learning_rate: 3.0e-5
     output_dir: outputs/checkpoints_en
     artifact_dir: artifacts/readers/en
     artifact_name: en
-
-  train_mixed:
-    train_file: data/stage1_train.jsonl
-    validation_file: data/stage1_validation.jsonl
-    epochs: 10
-    learning_rate: 3.0e-5
-    output_dir: outputs/checkpoints_stage1_mixed
-    artifact_dir: artifacts/readers/stage1_mixed
-    artifact_name: stage1_mixed
-
-  train_stage2_vi_from_mixed:
-    init_checkpoint_dir: outputs/checkpoints_stage1_mixed/best_model
-    train_file: data/stage2_vi_train.jsonl
-    validation_file: data/stage2_vi_validation.jsonl
-    epochs: 10
-    learning_rate: 1.0e-5
-    output_dir: outputs/checkpoints_stage2_vi
-    artifact_dir: artifacts/readers/stage2_vi
-    artifact_name: stage2_vi
-
+    
   eval_vi:
-    validation_file: data/eval_vi_validation.jsonl
+    validation_file: data/filtered_vi/data_vi_validation_filtered.jsonl
     output_dir: outputs/checkpoints_eval_vi
     artifact_dir: artifacts/readers/eval_vi
     artifact_name: eval_vi
 
   eval_en:
-    validation_file: data/eval_en_validation.jsonl
+    validation_file: data/filtered_en/data_en_validation_filtered.jsonl
     output_dir: outputs/checkpoints_eval_en
     artifact_dir: artifacts/readers/eval_en
     artifact_name: eval_en
+
+  train_vi_from_en:
+    init_checkpoint_dir: outputs/checkpoints_en/best_model
+    train_file: data/filtered_vi/data_vi_train_filtered.jsonl
+    validation_file: data/filtered_vi/data_vi_validation_filtered.jsonl
+    epochs: 5
+    learning_rate: 1.0e-5
+    output_dir: outputs/checkpoints_vi_from_en

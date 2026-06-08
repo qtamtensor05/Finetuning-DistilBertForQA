@@ -1,4 +1,5 @@
 import argparse
+import collections
 import json
 import sys
 from pathlib import Path
@@ -8,7 +9,7 @@ sys.path.append(str(ROOT))
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer
 
@@ -153,11 +154,13 @@ class QATrainer:
         datasets = build_qa_datasets(self.tokenizer, self.config)
         train_data = datasets["train"]
         val_data = datasets["validation"]
+        train_sampler = self._build_train_sampler(train_data)
 
         self.train_loader = DataLoader(
             train_data,
             batch_size=self.config.batch_size,
-            shuffle=True,
+            shuffle=train_sampler is None,
+            sampler=train_sampler,
         )
         self.val_loader = DataLoader(
             val_data,
@@ -167,6 +170,31 @@ class QATrainer:
 
         self._print_dataset_info(train_data)
         return self.train_loader, self.val_loader
+
+    def _build_train_sampler(self, train_data):
+        if not getattr(self.config, "use_question_group_sampler", False):
+            return None
+        if "question_group" not in train_data.column_names:
+            print("Question-group sampler disabled: missing question_group column.")
+            return None
+
+        groups = list(train_data["question_group"])
+        counts = collections.Counter(groups)
+        power = float(getattr(self.config, "question_group_sampling_power", 0.5))
+        weights = torch.tensor(
+            [1.0 / (counts[group] ** power) for group in groups],
+            dtype=torch.double,
+        )
+        print(
+            "Question-group sampler enabled: "
+            f"{len(counts)} groups, power={power:.2f}, "
+            f"min_count={min(counts.values()):,}, max_count={max(counts.values()):,}"
+        )
+        return WeightedRandomSampler(
+            weights=weights,
+            num_samples=len(weights),
+            replacement=True,
+        )
 
     def _print_dataset_info(self, train_data):
         print(train_data)

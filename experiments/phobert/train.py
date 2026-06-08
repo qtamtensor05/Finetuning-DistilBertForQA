@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import sys
 from pathlib import Path
@@ -11,7 +12,7 @@ sys.path.append(str(ROOT / "src" / "model"))
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer
 
@@ -90,9 +91,37 @@ class PhoBertTrainer:
             self.setup_tokenizer()
 
         datasets = build_qa_datasets(self.tokenizer, self.config)
-        self.train_loader = DataLoader(datasets["train"], batch_size=self.config.batch_size, shuffle=True)
+        train_data = datasets["train"]
+        train_sampler = self._build_train_sampler(train_data)
+        self.train_loader = DataLoader(
+            train_data,
+            batch_size=self.config.batch_size,
+            shuffle=train_sampler is None,
+            sampler=train_sampler,
+        )
         self.val_loader = DataLoader(datasets["validation"], batch_size=self.config.batch_size, shuffle=False)
         return self.train_loader, self.val_loader
+
+    def _build_train_sampler(self, train_data):
+        if not getattr(self.config, "use_question_group_sampler", False):
+            return None
+        if "question_group" not in train_data.column_names:
+            print("Question-group sampler disabled: missing question_group column.")
+            return None
+
+        groups = list(train_data["question_group"])
+        counts = collections.Counter(groups)
+        power = float(getattr(self.config, "question_group_sampling_power", 0.5))
+        weights = torch.tensor(
+            [1.0 / (counts[group] ** power) for group in groups],
+            dtype=torch.double,
+        )
+        print(
+            "Question-group sampler enabled: "
+            f"{len(counts)} groups, power={power:.2f}, "
+            f"min_count={min(counts.values()):,}, max_count={max(counts.values()):,}"
+        )
+        return WeightedRandomSampler(weights=weights, num_samples=len(weights), replacement=True)
 
     def setup_model(self):
         self.model = PhoBertLoraQA(self.config).to(self.device)

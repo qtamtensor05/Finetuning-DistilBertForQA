@@ -219,7 +219,7 @@ def run_pipeline(path: Path):
     # Determine language subfolder
     parts = rel.parts
     lang_sub = _LANG_DIR_MAP.get(parts[0], "filtered_other")
-    out_dir = Path("outputs") / lang_sub
+    out_dir = Path("data") / lang_sub
     name = rel.with_suffix("").as_posix().replace("/", "_") + "_filtered"
     print(f"\n{'=' * 60}")
     print(f"  {path}  →  {out_dir / f'{name}.jsonl'}")

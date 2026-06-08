@@ -6,6 +6,7 @@ from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 try:
     from .vietnamese import (
+        get_question_words,
         has_question_word,
         has_vietnamese,
         is_quality_sample,
@@ -15,6 +16,7 @@ try:
     )
 except ImportError:
     from vietnamese import (
+        get_question_words,
         has_question_word,
         has_vietnamese,
         is_quality_sample,
@@ -24,6 +26,11 @@ except ImportError:
     )
 
 logger = logging.getLogger(__name__)
+
+
+def _question_group(question: str, language: str) -> str:
+    words = get_question_words(question, language)
+    return words[0] if words else "Nhóm khác"
 
 
 # ──────────────────────────────────────────────
@@ -106,6 +113,11 @@ def prepare_train_features(
     contexts = [normalize_text(c) for c in examples[context_column]]
     answers = examples[answers_column]
     is_impossible = examples[impossible_column]
+    languages = examples.get("language", ["en"] * len(questions))
+    question_groups = [
+        _question_group(question, language)
+        for question, language in zip(questions, languages)
+    ]
 
     if use_vietnamese_segmentation and has_vietnamese(examples):
         logger.info("Detected Vietnamese data, applying word segmentation")
@@ -178,6 +190,10 @@ def prepare_train_features(
 
     tokenized["start_positions"] = start_positions
     tokenized["end_positions"] = end_positions
+    tokenized["question_group"] = [
+        question_groups[sample_idx]
+        for sample_idx in sample_mapping
+    ]
 
     return tokenized
 

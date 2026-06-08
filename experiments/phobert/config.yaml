@@ -19,6 +19,8 @@ defaults:
   epochs: 10
   learning_rate: 1.0e-5
   weight_decay: 0.01
+  use_question_group_sampler: true
+  question_group_sampling_power: 0.5
   save_best_model: true
   force_cpu: false
 
