@@ -769,12 +769,15 @@ if __name__ == "__main__":
         eval_loader = DataLoader(eval_split, batch_size=config.batch_size, shuffle=False, num_workers=0)
 
         val_file = config.validation_file or config.test_file
-        raw_examples = (
-            [json.loads(l) for l in Path(val_file).read_text(encoding="utf-8").splitlines() if l.strip()]
-            if val_file and Path(val_file).exists()
-            else [hf_load_dataset("taidng/UIT-ViQuAD2.0", split="test")[i]
-                  for i in range(len(hf_load_dataset("taidng/UIT-ViQuAD2.0", split="test")))]
-        )
+        if val_file and Path(val_file).exists():
+            raw_examples = [
+                json.loads(l)
+                for l in Path(val_file).read_text(encoding="utf-8").splitlines()
+                if l.strip()
+            ]
+        else:
+            dataset = hf_load_dataset("taidng/UIT-ViQuAD2.0", split="test")
+            raw_examples = [dataset[i] for i in range(len(dataset))]
         compare_checkpoints(
             checkpoint_dirs=args.compare,
             eval_loader=eval_loader,
