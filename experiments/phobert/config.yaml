@@ -1,0 +1,56 @@
+defaults:
+  model_family: phobert
+  dropout_rate: 0.1
+  freeze_encoder: false
+
+  question_column: question
+  context_column: context
+  answers_column: answers
+  impossible_column: is_impossible
+  plausible_answers_column: plausible_answers
+
+  max_length: 384
+  doc_stride: 128
+  padding: max_length
+  use_vietnamese_segmentation: true
+  segmentation_tool: underthesea
+
+  batch_size: 16
+  epochs: 10
+  learning_rate: 1.0e-5
+  weight_decay: 0.01
+  save_best_model: true
+  force_cpu: false
+
+  lora_r: 8
+  lora_alpha: 16
+  lora_target_modules: ["query", "value"]
+  lora_dropout: 0.05
+  lora_bias: "none"
+
+default_pipeline_profiles:
+  - train_phobert_base_vi
+  - train_phobert_base_v2_vi
+
+profiles:
+  train_phobert_base_vi:
+    model_name: vinai/phobert-base
+    train_file: data/stage2_vi_train.jsonl
+    validation_file: data/stage2_vi_validation.jsonl
+    output_dir: outputs/checkpoints_phobert_base_vi
+    artifact_dir: artifacts/readers/phobert_base_vi
+    artifact_name: phobert_base_vi
+
+  train_phobert_base_v2_vi:
+    model_name: vinai/phobert-base-v2
+    train_file: data/stage2_vi_train.jsonl
+    validation_file: data/stage2_vi_validation.jsonl
+    output_dir: outputs/checkpoints_phobert_base_v2_vi
+    artifact_dir: artifacts/readers/phobert_base_v2_vi
+    artifact_name: phobert_base_v2_vi
+
+  eval_vi:
+    validation_file: data/eval_vi_validation.jsonl
+    output_dir: outputs/compare_phobert
+    artifact_dir: artifacts/readers/compare_phobert
+    artifact_name: compare_phobert
