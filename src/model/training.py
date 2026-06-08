@@ -1,4 +1,5 @@
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -12,13 +13,9 @@ from tqdm.auto import tqdm
 from transformers import AutoTokenizer
 
 from config_model import Config
-from evalmodel import evaluate_loss
+from evalmodel import evaluate_loss, plot_loss_curves
 from loadmodel import CustomLoraDistilBertQA
 from src.data_loader import build_qa_datasets
-
-
-DEFAULT_PROFILE_NAME = "train_en"
-
 
 def save_checkpoint(
     checkpoint_dir,
@@ -30,6 +27,7 @@ def save_checkpoint(
     train_loss,
     val_loss,
     best_val_loss,
+    history=None,
 ):
     checkpoint_dir = Path(checkpoint_dir)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -42,12 +40,53 @@ def save_checkpoint(
             "train_loss": train_loss,
             "val_loss": val_loss,
             "best_val_loss": best_val_loss,
+            "history": history,
             "config": config.__dict__,
         },
         checkpoint_dir / "training_state.pt",
     )
     tokenizer.save_pretrained(checkpoint_dir)
     config.to_yaml(checkpoint_dir / "config.yaml")
+    save_history(history, checkpoint_dir)
+
+
+def save_history(history, output_dir):
+    if history is None:
+        return
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with open(output_dir / "training_history.json", "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+
+def update_checkpoint_history(checkpoint_dir, history):
+    checkpoint_dir = Path(checkpoint_dir)
+    state_path = checkpoint_dir / "training_state.pt"
+    if not state_path.exists():
+        return
+
+    state = torch.load(state_path, map_location="cpu")
+    state["history"] = history
+    torch.save(state, state_path)
+    save_history(history, checkpoint_dir)
+
+
+def save_loss_plot(history, output_dir):
+    if not history:
+        return
+
+    train_losses = history.get("train_loss", [])
+    val_losses = history.get("val_loss", [])
+    if train_losses and val_losses:
+        plot_loss_curves(train_losses, val_losses, Path(output_dir))
+
+
+def save_pipeline_history(step_records, output_dir):
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with open(output_dir / "pipeline_history.json", "w", encoding="utf-8") as f:
+        json.dump({"steps": step_records}, f, ensure_ascii=False, indent=2)
 
 
 def load_checkpoint(
@@ -74,29 +113,10 @@ def load_checkpoint(
 class QATrainer:
     def __init__(
         self,
-        profile_name=DEFAULT_PROFILE_NAME,
-        init_checkpoint_dir=None,
-        output_dir=None,
-        train_file=None,
-        validation_file=None,
-        load_optimizer_state=None,
-        use_profile_checkpoint=True,
+        profile_name=None,
     ):
         self.profile_name = profile_name
         self.config = Config.from_yaml(profile=profile_name)
-
-        if init_checkpoint_dir is not None:
-            self.config.init_checkpoint_dir = str(init_checkpoint_dir)
-        elif not use_profile_checkpoint:
-            self.config.init_checkpoint_dir = None
-        if output_dir is not None:
-            self.config.output_dir = str(output_dir)
-        if train_file is not None:
-            self.config.train_file = str(train_file)
-        if validation_file is not None:
-            self.config.validation_file = str(validation_file)
-        if load_optimizer_state is not None:
-            self.config.load_optimizer_state = load_optimizer_state
 
         self.device = self._resolve_device()
         self.tokenizer = None
@@ -106,6 +126,7 @@ class QATrainer:
         self.optimizer = None
         self.loss_fn = nn.CrossEntropyLoss()
         self.best_val_loss = float("inf")
+        self.history = {"train_loss": [], "val_loss": []}
 
     def _resolve_device(self):
         if getattr(self.config, "force_cpu", False):
@@ -181,6 +202,8 @@ class QATrainer:
             f"Loaded model weights from {self.init_checkpoint_dir} "
             f"(checkpoint epoch={state.get('epoch')})"
         )
+        if load_optimizer_state and state.get("history"):
+            self.history = state["history"]
         return state
 
     def setup(self):
@@ -237,6 +260,7 @@ class QATrainer:
                 train_loss,
                 val_loss,
                 self.best_val_loss,
+                self.history,
             )
             print(f"Saved best model: {best_dir}")
 
@@ -254,50 +278,101 @@ class QATrainer:
         for epoch in range(self.config.epochs):
             train_loss = self.train_one_epoch(epoch)
             val_loss = self.evaluate()
+            self.history.setdefault("train_loss", []).append(train_loss)
+            self.history.setdefault("val_loss", []).append(val_loss)
+            save_history(self.history, self.output_dir)
             print(
                 f"Epoch {epoch + 1}: "
                 f"train_loss={train_loss:.4f}, "
                 f"val_loss={val_loss:.4f}"
             )
             self.save_best_if_needed(epoch + 1, train_loss, val_loss)
+            update_checkpoint_history(self.output_dir / "best_model", self.history)
+
+        save_loss_plot(self.history, self.output_dir)
+        save_loss_plot(self.history, self.output_dir / "best_model")
+        return {
+            "profile": self.profile_name,
+            "output_dir": str(self.output_dir),
+            "best_model_dir": str(self.output_dir / "best_model"),
+            "best_val_loss": self.best_val_loss,
+            "history": self.history,
+        }
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--profile",
-        default=DEFAULT_PROFILE_NAME,
+        default=None,
         choices=Config.available_profiles(),
-        help="Profile trong config/model.yaml dùng để train từ base model.",
+        help=(
+            "Train mot profile duy nhat trong config/model.yaml. "
+            "Neu bo trong se chay pipeline mac dinh."
+        ),
     )
     parser.add_argument(
-        "--output-dir",
+        "--profiles",
+        nargs="+",
         default=None,
-        help="Thu muc luu checkpoint moi. Neu bo trong se lay tu profile.",
-    )
-    parser.add_argument(
-        "--train-file",
-        default=None,
-        help="File train jsonl. Neu bo trong se lay train_file tu profile.",
-    )
-    parser.add_argument(
-        "--validation-file",
-        default=None,
-        help="File validation jsonl. Neu bo trong se lay validation_file tu profile.",
+        choices=Config.available_profiles(),
+        help=(
+            "Danh sach profile train lien tiep. "
+            "Neu bo trong se lay default_pipeline_profiles tu config/model.yaml."
+        ),
     )
     return parser.parse_args()
 
 
+def resolve_profile_sequence(args):
+    if args.profile and args.profiles:
+        raise ValueError("Chi dung mot trong hai tuy chon: --profile hoac --profiles.")
+
+    if args.profiles:
+        return args.profiles
+
+    if args.profile:
+        return [args.profile]
+
+    default_profiles = Config.default_pipeline_profiles()
+    if not default_profiles:
+        raise ValueError("Chua cau hinh default_pipeline_profiles trong config/model.yaml.")
+
+    return default_profiles
+
+
+def run_single_profile(profile_name):
+    trainer = QATrainer(profile_name=profile_name)
+    return [trainer.train()]
+
+
+def run_profile_pipeline(profile_names):
+    step_records = []
+
+    for step_index, profile_name in enumerate(profile_names, start=1):
+        print(f"\n{'=' * 60}")
+        print(f"Pipeline step {step_index}/{len(profile_names)}: {profile_name}")
+        print(f"{'=' * 60}")
+
+        trainer = QATrainer(profile_name=profile_name)
+        record = trainer.train()
+        step_records.append(record)
+
+    if step_records:
+        save_pipeline_history(step_records, step_records[-1]["output_dir"])
+
+    return step_records
+
+
 def main():
     args = parse_args()
-    trainer = QATrainer(
-        profile_name=args.profile,
-        output_dir=args.output_dir,
-        train_file=args.train_file,
-        validation_file=args.validation_file,
-        use_profile_checkpoint=False,
-    )
-    trainer.train()
+    profile_names = resolve_profile_sequence(args)
+
+    is_single_profile = len(profile_names) == 1 and args.profile is not None
+    if is_single_profile:
+        run_single_profile(profile_names[0])
+    else:
+        run_profile_pipeline(profile_names)
 
 
 if __name__ == "__main__":
