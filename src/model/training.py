@@ -279,16 +279,21 @@ class QATrainer:
         for epoch in range(self.config.epochs):
             train_loss = self.train_one_epoch(epoch)
             val_loss = self.evaluate()
+            # Update in-memory history first so it's up-to-date for any best-checkpoint save
             self.history.setdefault("train_loss", []).append(train_loss)
             self.history.setdefault("val_loss", []).append(val_loss)
-            save_history(self.history, self.output_dir)
+
             print(
                 f"Epoch {epoch + 1}: "
                 f"train_loss={train_loss:.4f}, "
                 f"val_loss={val_loss:.4f}"
             )
+
+            # May save a best-model checkpoint, which can directly embed the current in-memory history
             self.save_best_if_needed(epoch + 1, train_loss, val_loss)
-            update_checkpoint_history(self.output_dir / "best_model", self.history)
+
+            # Persist training_history.json once per epoch, after any best-checkpoint update
+            save_history(self.history, self.output_dir)
 
         save_loss_plot(self.history, self.output_dir)
         save_loss_plot(self.history, self.output_dir / "best_model")
