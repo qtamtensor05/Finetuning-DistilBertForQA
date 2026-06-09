@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 
-from transformers import AutoTokenizer, PreTrainedTokenizerBase
+from transformers import PreTrainedTokenizerBase
 
 try:
     from .vietnamese import (
+        get_question_words,
         has_question_word,
         has_vietnamese,
         is_quality_sample,
@@ -15,6 +16,7 @@ try:
     )
 except ImportError:
     from vietnamese import (
+        get_question_words,
         has_question_word,
         has_vietnamese,
         is_quality_sample,
@@ -24,6 +26,11 @@ except ImportError:
     )
 
 logger = logging.getLogger(__name__)
+
+
+def _question_group(question: str, language: str) -> str:
+    words = get_question_words(question, language)
+    return words[0] if words else "Nhóm khác"
 
 
 # ──────────────────────────────────────────────
@@ -106,6 +113,11 @@ def prepare_train_features(
     contexts = [normalize_text(c) for c in examples[context_column]]
     answers = examples[answers_column]
     is_impossible = examples[impossible_column]
+    languages = examples.get("language", ["en"] * len(questions))
+    question_groups = [
+        _question_group(question, language)
+        for question, language in zip(questions, languages)
+    ]
 
     if use_vietnamese_segmentation and has_vietnamese(examples):
         logger.info("Detected Vietnamese data, applying word segmentation")
@@ -159,7 +171,7 @@ def prepare_train_features(
             while sequence_ids[context_end] != 1:
                 context_end -= 1
 
-            if offsets[context_start][0] > answer_end_char or offsets[context_end][1] < answer_start_char:
+            if offsets[context_start][0] > answer_start_char or offsets[context_end][1] < answer_end_char:
                 start_positions.append(cls_index)
                 end_positions.append(cls_index)
             else:
@@ -178,6 +190,10 @@ def prepare_train_features(
 
     tokenized["start_positions"] = start_positions
     tokenized["end_positions"] = end_positions
+    tokenized["question_group"] = [
+        question_groups[sample_idx]
+        for sample_idx in sample_mapping
+    ]
 
     return tokenized
 
@@ -192,6 +208,7 @@ def prepare_eval_features(
     padding: str,
     use_vietnamese_segmentation: bool = True,
     segmentation_tool: str | None = "underthesea",
+    example_indices: list[int] | None = None,
 ) -> dict[str, list]:
     questions = [normalize_text(q) for q in examples[question_column]]
     contexts = [normalize_text(c) for c in examples[context_column]]
@@ -222,7 +239,10 @@ def prepare_eval_features(
     tokenized["sample_id"] = []
     for i in range(len(tokenized["input_ids"])):
         sample_idx = sample_mapping[i]
-        tokenized["sample_id"].append(sample_idx)
+        if example_indices is None:
+            tokenized["sample_id"].append(sample_idx)
+        else:
+            tokenized["sample_id"].append(example_indices[sample_idx])
 
         sequence_ids = tokenized.sequence_ids(i)
         context_start = 0
