@@ -130,6 +130,87 @@ def _best_metric_scores(prediction: str, gold_answers: list[str]) -> tuple[int, 
     return max(candidates, key=lambda item: (item[3], item[0], item[2], item[1]))
 
 
+def _select_best_no_answer_threshold(
+    span_predictions: list[str],
+    references: list[list[str]],
+    no_answer_score_diffs: list[float],
+    initial_threshold: float,
+) -> float:
+    finite_diffs = [d for d in no_answer_score_diffs if np.isfinite(d)]
+    if not finite_diffs:
+        return float(initial_threshold)
+
+    n_samples = len(no_answer_score_diffs)
+    span_scores = [
+        _best_metric_scores(prediction, golds)
+        for prediction, golds in zip(span_predictions, references)
+    ]
+    empty_scores = [_best_metric_scores("", golds) for golds in references]
+
+    def _metric_from_totals(total_em: float, total_f1: float) -> dict:
+        return {
+            "exact_match": 100.0 * total_em / n_samples if n_samples else 0.0,
+            "f1": 100.0 * total_f1 / n_samples if n_samples else 0.0,
+        }
+
+    def _totals_at(threshold: float) -> tuple[float, float]:
+        total_em, total_f1 = 0.0, 0.0
+        for score_diff, span_score, empty_score in zip(
+            no_answer_score_diffs,
+            span_scores,
+            empty_scores,
+        ):
+            score = empty_score if score_diff < threshold else span_score
+            total_em += score[0]
+            total_f1 += score[3]
+        return total_em, total_f1
+
+    def _is_better(scores: dict, best_scores: dict) -> bool:
+        return (scores["f1"], scores["exact_match"]) > (
+            best_scores["f1"],
+            best_scores["exact_match"],
+        )
+
+    eps = 1e-6
+    best_threshold = float(initial_threshold)
+    best_scores = _metric_from_totals(*_totals_at(best_threshold))
+
+    min_threshold = min(finite_diffs) - eps
+    for threshold in (min_threshold, 0.0):
+        scores = _metric_from_totals(*_totals_at(threshold))
+        if _is_better(scores, best_scores):
+            best_threshold = float(threshold)
+            best_scores = scores
+
+    total_em, total_f1 = _totals_at(min_threshold)
+    sorted_items = sorted(
+        (diff, idx)
+        for idx, diff in enumerate(no_answer_score_diffs)
+        if np.isfinite(diff)
+    )
+    pointer = 0
+    unique_diffs = sorted(set(finite_diffs))
+    candidate_thresholds = (d + eps for d in unique_diffs)
+    for threshold in tqdm(
+        candidate_thresholds,
+        total=len(unique_diffs),
+        desc="Tune no-answer threshold",
+        leave=False,
+    ):
+        while pointer < len(sorted_items) and sorted_items[pointer][0] < threshold:
+            _, idx = sorted_items[pointer]
+            total_em += empty_scores[idx][0] - span_scores[idx][0]
+            total_f1 += empty_scores[idx][3] - span_scores[idx][3]
+            pointer += 1
+
+        scores = _metric_from_totals(total_em, total_f1)
+        if _is_better(scores, best_scores):
+            best_threshold = float(threshold)
+            best_scores = scores
+
+    return best_threshold
+
+
 # ─── evaluate_loss (training.py gọi mỗi epoch) ───────────────────────────────
 
 
@@ -347,25 +428,12 @@ def evaluate_qa_metrics(
 
     selected_threshold = float(no_answer_threshold)
     if tune_no_answer_threshold and no_answer_score_diffs:
-        finite_diffs = [d for d in no_answer_score_diffs if np.isfinite(d)]
-        if finite_diffs:
-            eps = 1e-6
-            candidates = [min(finite_diffs) - eps, 0.0]
-            candidates.extend(d + eps for d in sorted(set(finite_diffs)))
-            best_threshold = selected_threshold
-            best_scores = _score_predictions(
-                _apply_threshold(best_threshold),
-                use_squad_backend=False,
-            )
-            for threshold in tqdm(candidates, desc="Tune no-answer threshold", leave=False):
-                scores = _score_predictions(
-                    _apply_threshold(threshold),
-                    use_squad_backend=False,
-                )
-                if (scores["f1"], scores["exact_match"]) > (best_scores["f1"], best_scores["exact_match"]):
-                    best_threshold = float(threshold)
-                    best_scores = scores
-            selected_threshold = best_threshold
+        selected_threshold = _select_best_no_answer_threshold(
+            span_predictions,
+            references,
+            no_answer_score_diffs,
+            selected_threshold,
+        )
 
     predictions = _apply_threshold(selected_threshold)
     scores = _score_predictions(predictions)

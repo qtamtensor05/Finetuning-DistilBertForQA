@@ -175,11 +175,7 @@ python experiments/phobert/compare.py \
   outputs/checkpoints_phobert_base_vi/best_model \
   outputs/checkpoints_phobert_base_v2_vi/best_model \
   --save-dir outputs/compare_vi_models
-```
 
-## 8. Ghi chú về output và Git
-
-Các artifact nặng như checkpoint, `.pt`, EDA, biểu đồ và cache được ignore trong `.gitignore`. Một vài file trong `outputs/checkpoints_en/best_model/` đang được Git track sẵn như checkpoint mẫu nhỏ; không nên xóa nếu bạn vẫn muốn giữ khả năng chạy profile `train_vi_from_en` từ checkpoint EN đã có.
 
 Tài liệu chi tiết hơn:
 

@@ -62,7 +62,7 @@ profiles:
   train_vi:
     train_file: data/filtered_vi/data_vi_train_filtered.jsonl
     validation_file: data/filtered_vi/data_vi_validation_filtered.jsonl
-    epochs: 10
+    epochs: 2
     learning_rate: 1.0e-5
     output_dir: outputs/checkpoints_vi
     artifact_dir: artifacts/readers/vi
@@ -71,7 +71,7 @@ profiles:
   train_en:
     train_file: data/filtered_en/data_en_train_filtered.jsonl
     validation_file: data/filtered_en/data_en_validation_filtered.jsonl
-    epochs: 3
+    epochs: 5
     learning_rate: 1.0e-5
     output_dir: outputs/checkpoints_en
     artifact_dir: artifacts/readers/en
@@ -93,7 +93,7 @@ profiles:
     init_checkpoint_dir: outputs/checkpoints_en/best_model
     train_file: data/filtered_vi/data_vi_train_filtered.jsonl
     validation_file: data/filtered_vi/data_vi_validation_filtered.jsonl
-    epochs: 7
+    epochs: 10
     learning_rate: 1.0e-5
     output_dir: outputs/checkpoints_vi_from_en
 
