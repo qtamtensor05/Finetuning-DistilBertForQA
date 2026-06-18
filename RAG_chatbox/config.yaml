@@ -1,0 +1,19 @@
+model:
+  model_dir: ../outputs/checkpoints_vi/best_model
+
+chunking:
+  chunk_size: 900
+  chunk_overlap: 180
+
+embedding:
+  max_length: 256
+  batch_size: 16
+
+retrieval:
+  top_k: 5
+
+qa:
+  max_answer_tokens: 30
+
+storage:
+  vector_dir: vector_store
